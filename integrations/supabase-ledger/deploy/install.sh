@@ -65,7 +65,8 @@ install -m 700 "$DEPLOY/console.sh" "$PREFIX/console.sh"
 cat <<EOF
 
 Next:
-  1. Fill in $PREFIX/.env (see the comments in it). Enter the API key without echoing it:
+  1. Fill in $PREFIX/.env (see the comments in it). Enter the credential without echoing it
+     (or CLAUDE_CODE_OAUTH_TOKEN in place of ANTHROPIC_API_KEY):
        read -rs KEY && sed -i "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=\$KEY|" $PREFIX/.env && unset KEY
   2. Start the console:
        $PREFIX/console.sh

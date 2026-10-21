@@ -13,9 +13,15 @@ set -a
 . "$PREFIX/.env"
 set +a
 
-for name in ANTHROPIC_API_KEY LEDGER_DSN LEDGER_TENANT_ID; do
+for name in LEDGER_DSN LEDGER_TENANT_ID; do
   [ -n "${!name:-}" ] || { echo "console: $name is empty in $PREFIX/.env" >&2; exit 1; }
 done
+# Either credential runs the console; an empty one is unset so it cannot shadow the other.
+for name in ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN; do
+  [ -n "${!name:-}" ] || unset "$name"
+done
+[ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] \
+  || { echo "console: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in $PREFIX/.env" >&2; exit 1; }
 
 exec "$PREFIX/venv/bin/python" "$PREFIX/src/merchant-agent/runtime-agent-sdk/main.py" \
   --backend ledger_backend.deployment:build_merchant "$@"
