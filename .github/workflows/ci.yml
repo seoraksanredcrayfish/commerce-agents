@@ -43,7 +43,7 @@ jobs:
         # these names ever appears on the index, fail here — without downloading
         # or building anything a squatter uploaded.
         run: |
-          for name in commerce-common shopping-agent-core shopping-agent-runtime shopping-agent-sdk merchant-agent-core merchant-agent-runtime merchant-agent-sdk; do
+          for name in commerce-common shopping-agent-core shopping-agent-runtime shopping-agent-sdk merchant-agent-core merchant-agent-runtime merchant-agent-sdk supabase-ledger; do
             if pip index versions "$name" > idx.log 2>&1; then
               echo "ALERT: $name is registered on the public index"; cat idx.log; exit 1
             fi
@@ -57,7 +57,7 @@ jobs:
         # unregistered, and --only-binary forbids building any remote sdist
         # even in the window between the two steps (local dirs still build).
         run: |
-          for pkg in ./shopping-agent/core ./shopping-agent/runtime-messages-api ./shopping-agent/runtime-agent-sdk ./merchant-agent/core ./merchant-agent/runtime-messages-api ./merchant-agent/runtime-agent-sdk; do
+          for pkg in ./shopping-agent/core ./shopping-agent/runtime-messages-api ./shopping-agent/runtime-agent-sdk ./merchant-agent/core ./merchant-agent/runtime-messages-api ./merchant-agent/runtime-agent-sdk ./integrations/supabase-ledger; do
             if pip install --dry-run --only-binary=:all: "$pkg" > out.log 2>&1; then
               echo "UNEXPECTED: $pkg resolved without sibling installs"; cat out.log; exit 1
             fi

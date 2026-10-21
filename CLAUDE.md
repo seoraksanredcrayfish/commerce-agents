@@ -17,9 +17,10 @@ paths each, four vertical examples, and a Claude Code plugin.
 - `examples/<vertical>/`: `api/`, `data/`, `storefront-web/`, `merchant-web/`; ports 8000-8003, 3000-3003, 3100-3103.
 - `plugins/commerce-builder/`: six skills, four commands; `.claude-plugin/marketplace.json` points at it.
 - `docs/`: `safety.md`, `backends.md`, `deployment.md`. `scripts/`: install, demo, smoke, screenshots, check, deploy, verify.
+- `integrations/supabase-ledger/`: `LedgerMerchantBackend` over a tenant-scoped Supabase ledger fed by Cafe24 and Zigzag; read-only, tenant from the environment.
 - `tests/`: the suites that span packages (both roles on all three paths); each package keeps its own `tests/`.
 
-`requirements.txt` installs the seven packages and their pinned dependencies (`requirements-dev.txt`
+`requirements.txt` installs the eight packages and their pinned dependencies (`requirements-dev.txt`
 adds pytest and ruff); `scripts/install.sh` runs it.
 
 ## Design rules
@@ -36,9 +37,11 @@ adds pytest and ruff); `scripts/install.sh` runs it.
 No real company, brand, product, or person appears: the only company is ACME and its
 lines; every brand, prompt, schema, and figure is invented here. Two exceptions:
 deployment and integration targets (the README's "MCP connectors" section; platform and
-SDK names in `docs/deployment.md`, the README's deploying section, and the platform tests),
-and CC0 category photos listed in the `IMAGE-CREDITS.md` beside them. When in doubt,
-redesign rather than rename.
+SDK names in `docs/deployment.md`, the README's deploying section, and the platform tests;
+the platforms an integration reads, Supabase, Cafe24, and Zigzag, under `integrations/`),
+and CC0 category photos listed in the `IMAGE-CREDITS.md` beside them. A tenant's identity
+(its id, brand, policies, records) is deployment configuration and is never committed.
+When in doubt, redesign rather than rename.
 
 ## Conventions
 

@@ -18,7 +18,7 @@ Python 3.11+ and Node 22. Clone, install, add a key, run a vertical:
 ```bash
 git clone https://github.com/anthropics/commerce-agents.git && cd commerce-agents
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt       # the seven packages and their pinned dependencies
+pip install -r requirements.txt       # the eight packages and their pinned dependencies
 cp .env.example .env                  # add ANTHROPIC_API_KEY
 (cd examples && npm ci)               # the eight web apps share one workspace
 python scripts/run_demo.py retail     # API :8000 + storefront :3000
@@ -74,6 +74,7 @@ its analytics, catalog, inventory, pricing, and campaign systems.
 | [`merchant-agent/managed-agents/`](merchant-agent/managed-agents/) | Manifest, merchant MCP server, scheduled digest for Managed Agents | — |
 | [`examples/`](examples/) | Four verticals, shared host code (`demo_common/`), shared web code (`web-shared/`) | — |
 | [`plugins/commerce-builder/`](plugins/commerce-builder/) | The Claude Code plugin | — |
+| [`integrations/supabase-ledger/`](integrations/supabase-ledger/) | `LedgerMerchantBackend` over a tenant-scoped Supabase ledger (Cafe24, Zigzag) | `supabase-ledger`, `ledger_backend` |
 | [`docs/`](docs/) | `safety.md` (enforced rules), `backends.md` (mapping your systems), `deployment.md` (other platforms) | — |
 | [`tests/`](tests/) | Cross-package suites; each package also has its own `tests/` | — |
 | [`scripts/`](scripts/) | `install.sh`, `run_demo.py`, `smoke_chat.py`, `screenshot_tour.py`, `check.py`, `deploy_managed_agent.sh`, `verify_all.py` | — |

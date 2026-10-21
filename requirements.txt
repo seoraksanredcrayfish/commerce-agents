@@ -1,11 +1,12 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 #
-# The seven packages of this repository, editable from their directories, and every
-# third-party package they need at run time, pinned to the versions the release was
-# tested against. Install with `pip install -r requirements.txt` inside a virtualenv;
-# `scripts/install.sh` runs that line. Nothing here resolves a repository package from
-# the package index: the seven names are unregistered there, and each pyproject pins its
+# The eight packages of this repository (the seven role packages and the ledger
+# integration), editable from their directories, and every third-party package they need
+# at run time, pinned to the versions the release was tested against. Install with
+# `pip install -r requirements.txt` inside a virtualenv; `scripts/install.sh` runs that
+# line. Nothing here resolves a repository package from the package index: the eight
+# names are unregistered there, and each pyproject pins its
 # sibling dependencies to a version no index carries. To move a pin, edit it here and in
 # the pyproject that declares the range, then run the verify line in the README.
 
@@ -16,6 +17,7 @@
 -e ./merchant-agent/core
 -e ./merchant-agent/runtime-messages-api
 -e ./merchant-agent/runtime-agent-sdk
+-e ./integrations/supabase-ledger
 
 annotated-doc==0.0.5
 annotated-types==0.8.0
