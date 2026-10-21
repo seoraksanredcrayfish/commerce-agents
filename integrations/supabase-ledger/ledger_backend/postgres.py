@@ -121,10 +121,11 @@ class PostgresLedgerReader:
 
 def readonly_fetch(dsn: str) -> Fetch:
     """A fetch on asyncpg (the ``postgres`` extra) that opens a connection per statement
-    and runs it in a read-only transaction."""
-    import asyncpg
+    and runs it in a read-only transaction. The driver loads on the first statement."""
 
     async def fetch(sql: str, *args: Any) -> list[Mapping[str, Any]]:
+        import asyncpg
+
         connection = await asyncpg.connect(dsn)
         try:
             async with connection.transaction(readonly=True):
