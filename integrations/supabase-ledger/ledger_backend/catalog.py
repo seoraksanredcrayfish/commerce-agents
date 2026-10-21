@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Product rows grouped into the merchant agent's listing shapes (``docs/backends.md``):
-rows sharing a family number become one family, ``p<number>``, whose variants are the
-rows keyed by barcode; a row with no family number is a plain listing keyed by barcode.
-Pure functions over rows."""
+rows sharing a family number become one family, ``c24:<number>`` (the workbench product
+key), whose variants are the rows keyed by barcode; a row with no family number is a plain
+listing keyed by barcode. Pure functions over rows."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def _variant(row: ProductRow, family_id: str | None, tenant: TenantConfig) -> Li
 
 
 def _family(number: int, rows: list[ProductRow], tenant: TenantConfig) -> ListingDetails:
-    family_id = f"p{number}"
+    family_id = f"c24:{number}"
     variants = [_variant(row, family_id, tenant) for row in rows]
     options: dict[str, list[str]] = {}
     for variant in variants:

@@ -17,7 +17,7 @@ from .rows import DailyOrders, ProductRow
 
 Fetch = Callable[..., Awaitable[list[Mapping[str, Any]]]]
 
-PRODUCTS_SQL = """
+_PRODUCT_COLUMNS = """
 select barcode,
        product_name,
        coalesce(option_name, '') as option_name,
@@ -27,8 +27,54 @@ select barcode,
        coalesce(stock_sellable, 0) as stock_sellable,
        cafe24_product_no as family_no
 from public.products
+"""
+
+# The family key matches the workbench's product key: c24:<number>, else the barcode.
+SEARCH_SQL = (
+    """
+with hits as (
+  select distinct on (key) key, first_seen
+  from (
+    select coalesce('c24:' || cafe24_product_no, 'b:' || barcode) as key,
+           coalesce(cafe24_product_no, 2147483647) as first_seen
+    from public.products
+    where tenant_id = $1
+      and ($2 = '' or product_name ilike '%' || $2 || '%' or barcode = $2)
+  ) matched
+  order by key, first_seen
+  limit $3
+)
+"""
+    + _PRODUCT_COLUMNS
+    + """
 where tenant_id = $1
+  and coalesce('c24:' || cafe24_product_no, 'b:' || barcode) in (select key from hits)
 order by cafe24_product_no nulls last, barcode
+"""
+)
+
+LISTING_ROWS_SQL = (
+    _PRODUCT_COLUMNS
+    + """
+where tenant_id = $1
+  and (cafe24_product_no = $2::int or barcode = $3::text)
+order by barcode
+"""
+)
+
+LOW_STOCK_ROWS_SQL = (
+    _PRODUCT_COLUMNS
+    + """
+where tenant_id = $1 and stock_sellable > 0 and stock_sellable <= $2
+order by stock_sellable, barcode
+limit $3
+"""
+)
+
+LOW_STOCK_COUNT_SQL = """
+select count(*)::int as count
+from public.products
+where tenant_id = $1 and stock_sellable > 0 and stock_sellable <= $2
 """
 
 DAILY_ORDERS_SQL = """
@@ -50,8 +96,23 @@ class PostgresLedgerReader:
         self._fetch = fetch
         self._timezone = timezone
 
-    async def products(self, tenant_id: str) -> list[ProductRow]:
-        return [ProductRow(**row) for row in await self._fetch(PRODUCTS_SQL, tenant_id)]
+    async def search_products(self, tenant_id: str, query: str, limit: int) -> list[ProductRow]:
+        rows = await self._fetch(SEARCH_SQL, tenant_id, query, limit)
+        return [ProductRow(**row) for row in rows]
+
+    async def listing_rows(
+        self, tenant_id: str, *, family_no: int | None = None, barcode: str | None = None
+    ) -> list[ProductRow]:
+        rows = await self._fetch(LISTING_ROWS_SQL, tenant_id, family_no, barcode)
+        return [ProductRow(**row) for row in rows]
+
+    async def low_stock_rows(self, tenant_id: str, threshold: int, limit: int) -> list[ProductRow]:
+        rows = await self._fetch(LOW_STOCK_ROWS_SQL, tenant_id, threshold, limit)
+        return [ProductRow(**row) for row in rows]
+
+    async def low_stock_count(self, tenant_id: str, threshold: int) -> int:
+        rows = await self._fetch(LOW_STOCK_COUNT_SQL, tenant_id, threshold)
+        return int(rows[0]["count"]) if rows else 0
 
     async def daily_orders(self, tenant_id: str, start: date, end: date) -> list[DailyOrders]:
         rows = await self._fetch(DAILY_ORDERS_SQL, tenant_id, start, end, self._timezone)

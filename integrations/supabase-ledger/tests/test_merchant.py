@@ -80,7 +80,7 @@ def backend(reader) -> LedgerMerchantBackend:
 async def test_search_matches_titles_within_the_tenant_only(backend):
     found = await backend.search_listings(SESSION, "pants")
 
-    assert [listing.listing_id for listing in found] == ["p14"]
+    assert [listing.listing_id for listing in found] == ["c24:14"]
     assert await backend.search_listings(SESSION, "Other Tenant Coat") == []
 
 
@@ -91,11 +91,11 @@ async def test_a_browse_query_lists_everything_and_filters_apply(backend):
 
 
 async def test_get_listing_returns_a_family_with_variants_and_a_variant_by_id(backend):
-    family = await backend.get_listing(SESSION, "p14")
+    family = await backend.get_listing(SESSION, "c24:14")
     variant = await backend.get_listing(SESSION, "1-002")
 
     assert [v.listing_id for v in family.variants] == ["1-001", "1-002"]
-    assert variant.variant_of == "p14"
+    assert variant.variant_of == "c24:14"
     assert await backend.get_listing(SESSION, "9-001") is None  # another tenant's
 
 
@@ -104,7 +104,7 @@ async def test_low_stock_alerts_cover_positive_stock_at_or_under_the_threshold(b
 
     assert [(a.listing_id, a.stock, a.variant_of) for a in alerts] == [
         ("3-001", 1, None),
-        ("1-001", 2, "p14"),
+        ("1-001", 2, "c24:14"),
     ]
     assert {a.kind for a in alerts} == {"low_stock"}
     assert alerts[0].threshold == 3
@@ -123,7 +123,7 @@ async def test_alerts_are_capped_lowest_stock_first_while_the_snapshot_counts_th
 
 
 async def test_pricing_context_carries_cost_margin_and_the_configured_caps(backend):
-    context = await backend.get_pricing_context(SESSION, "p14")
+    context = await backend.get_pricing_context(SESSION, "c24:14")
 
     assert context.current_price == 39000
     assert context.currency == "KRW"
@@ -192,3 +192,10 @@ async def test_a_zero_threshold_turns_low_stock_alerts_off(reader):
 
     assert await quiet.get_inventory_alerts(SESSION) == []
     assert (await quiet.get_business_snapshot(SESSION)).alerts.low_stock == 0
+
+
+async def test_search_returns_at_most_the_limit_and_keeps_families_whole(backend):
+    found = await backend.search_listings(SESSION, "", limit=1)
+
+    assert [listing.listing_id for listing in found] == ["c24:14"]
+    assert found[0].stock == 11  # both variants counted

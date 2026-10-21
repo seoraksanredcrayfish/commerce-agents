@@ -40,13 +40,14 @@ from merchant_agent import (
 )
 from merchant_agent.types import DataLimitation
 
-from .catalog import as_listing, find_listing, listings_of
+from .catalog import as_listing, find_listing, listings_of, option_values
 from .periods import Window, resolve_period
 from .reader import LedgerReader
-from .rows import DailyOrders
+from .rows import DailyOrders, ProductRow
 from .tenant import TenantConfig
 
 _BROWSE_QUERIES = {"", "*", "all", "everything", "전체"}
+_FILTERED_PAGE = 50
 _LISTING_SORTS = {
     "stock_asc": lambda listing: listing.stock,
     "price_desc": lambda listing: -listing.price,
@@ -67,13 +68,6 @@ _LIMITATIONS = (
 def _today(session: MerchantSessionContext) -> date:
     now = session.local_now() or datetime.now(UTC)
     return now.date()
-
-
-def _matches(listing: ListingDetails, query: str) -> bool:
-    needle = query.casefold()
-    return needle in listing.title.casefold() or any(
-        needle == candidate.listing_id.casefold() for candidate in (listing, *listing.variants)
-    )
 
 
 def _filtered(listings: list[Listing], filters: ListingFilters | None) -> list[Listing]:
@@ -122,8 +116,18 @@ class LedgerMerchantBackend(MerchantBackend):
         self._tenant = tenant
         self._config = config
 
-    async def _listings(self) -> list[ListingDetails]:
-        return listings_of(await self._reader.products(self._tenant.tenant_id), self._tenant)
+    async def _record(self, listing_id: str) -> tuple[ListingDetails | None, dict[str, ProductRow]]:
+        """The listing or variant ``listing_id`` names, read with its family, and the
+        family's rows by barcode."""
+        tenant_id = self._tenant.tenant_id
+        if listing_id.startswith("c24:") and listing_id[4:].isdigit():
+            rows = await self._reader.listing_rows(tenant_id, family_no=int(listing_id[4:]))
+        else:
+            rows = await self._reader.listing_rows(tenant_id, barcode=listing_id)
+            if rows and rows[0].family_no is not None:
+                rows = await self._reader.listing_rows(tenant_id, family_no=rows[0].family_no)
+        listing = find_listing(listings_of(rows, self._tenant), listing_id)
+        return listing, {row.barcode: row for row in rows}
 
     async def _orders(self, window: Window) -> tuple[list[DailyOrders], list[DailyOrders]]:
         rows = await self._reader.daily_orders(
@@ -144,7 +148,7 @@ class LedgerMerchantBackend(MerchantBackend):
         prior_sales, _ = _known_amounts(prior)
         orders = sum(row.orders for row in current)
         prior_orders = sum(row.orders for row in prior)
-        alerts = await self._low_stock()
+        low_stock = await self._low_stock_count()
         return BusinessSnapshot(
             period=window.label,
             compare_to=window.prior_label,
@@ -154,7 +158,7 @@ class LedgerMerchantBackend(MerchantBackend):
             sales_change_pct=_change_pct(sales, prior_sales),
             orders_change_pct=_change_pct(orders, prior_orders),
             currency=self._tenant.currency,
-            alerts=AlertCounts(low_stock=len(alerts)),
+            alerts=AlertCounts(low_stock=low_stock),
             note=_missing_amount_note(current),
         )
 
@@ -206,43 +210,49 @@ class LedgerMerchantBackend(MerchantBackend):
         filters: ListingFilters | None = None,
         limit: int = 8,
     ) -> list[Listing]:
-        listings = await self._listings()
-        if query.strip().casefold() not in _BROWSE_QUERIES:
-            listings = [listing for listing in listings if _matches(listing, query.strip())]
-        return _filtered([as_listing(listing) for listing in listings], filters)[:limit]
+        cleaned = query.strip()
+        if cleaned.casefold() in _BROWSE_QUERIES:
+            cleaned = ""
+        # Filters apply to the page read, so a filtered read takes a wider page.
+        page = limit if filters is None else max(limit, _FILTERED_PAGE)
+        rows = await self._reader.search_products(self._tenant.tenant_id, cleaned, page)
+        listings = [as_listing(listing) for listing in listings_of(rows, self._tenant)]
+        return _filtered(listings, filters)[:limit]
 
     async def get_listing(
         self, session: MerchantSessionContext, listing_id: str
     ) -> ListingDetails | None:
-        return find_listing(await self._listings(), listing_id)
+        listing, _ = await self._record(listing_id)
+        return listing
 
     # -- Inventory and order health --------------------------------------------------
 
-    async def _low_stock(self) -> list[InventoryAlert]:
+    async def _low_stock_count(self) -> int:
         threshold = self._tenant.low_stock_threshold
-        sellable = (
-            record
-            for listing in await self._listings()
-            for record in (listing.variants or [listing])
+        if threshold <= 0:
+            return 0
+        return await self._reader.low_stock_count(self._tenant.tenant_id, threshold)
+
+    async def get_inventory_alerts(self, session: MerchantSessionContext) -> list[InventoryAlert]:
+        threshold = self._tenant.low_stock_threshold
+        if threshold <= 0:
+            return []
+        rows = await self._reader.low_stock_rows(
+            self._tenant.tenant_id, threshold, self._tenant.max_alerts
         )
         return [
             InventoryAlert(
-                listing_id=record.listing_id,
-                title=record.title,
+                listing_id=row.barcode,
+                title=row.product_name,
                 kind="low_stock",
-                option_values=record.option_values,
-                variant_of=record.variant_of,
-                stock=record.stock,
+                option_values=option_values(row.option_name, self._tenant.option_labels),
+                variant_of=f"c24:{row.family_no}" if row.family_no is not None else None,
+                stock=int(row.stock_sellable),
                 threshold=threshold,
                 storefront_visible=True,
             )
-            for record in sellable
-            if 0 < record.stock <= threshold
+            for row in rows
         ]
-
-    async def get_inventory_alerts(self, session: MerchantSessionContext) -> list[InventoryAlert]:
-        alerts = sorted(await self._low_stock(), key=lambda alert: alert.stock)
-        return alerts[: self._tenant.max_alerts]
 
     async def get_order_issues(self, session: MerchantSessionContext) -> list[OrderIssue]:
         return []
@@ -252,8 +262,7 @@ class LedgerMerchantBackend(MerchantBackend):
     async def get_pricing_context(
         self, session: MerchantSessionContext, listing_id: str
     ) -> PricingContext | None:
-        rows = {row.barcode: row for row in await self._reader.products(self._tenant.tenant_id)}
-        listing = find_listing(listings_of(rows.values(), self._tenant), listing_id)
+        listing, rows = await self._record(listing_id)
         if listing is None:
             return None
 

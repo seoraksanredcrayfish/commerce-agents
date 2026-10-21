@@ -38,7 +38,7 @@ def test_rows_sharing_a_family_number_become_one_family_with_variants():
     listings = listings_of(ROWS, TENANT)
 
     family = listings[0]
-    assert family.listing_id == "p14"
+    assert family.listing_id == "c24:14"
     assert family.title == "ACME Curved Pants"
     assert family.options == {"color": ["IVORY", "BLACK"], "size": ["OS"]}
     assert family.price == 35000  # the lowest variant's
@@ -46,7 +46,7 @@ def test_rows_sharing_a_family_number_become_one_family_with_variants():
     assert family.currency == "KRW"
     assert [v.listing_id for v in family.variants] == ["1-001", "1-002"]
     assert family.variants[0].option_values == {"color": "IVORY", "size": "OS"}
-    assert family.variants[0].variant_of == "p14"
+    assert family.variants[0].variant_of == "c24:14"
 
 
 def test_a_row_without_a_family_number_is_a_plain_listing_keyed_by_barcode():
@@ -73,8 +73,8 @@ def test_a_zero_selling_price_is_marked_unset_rather_than_quoted_as_free():
 def test_find_listing_resolves_a_family_and_a_variant_id():
     listings = listings_of(ROWS, TENANT)
 
-    assert find_listing(listings, "p14").listing_id == "p14"
-    assert find_listing(listings, "1-002").variant_of == "p14"
+    assert find_listing(listings, "c24:14").listing_id == "c24:14"
+    assert find_listing(listings, "1-002").variant_of == "c24:14"
     assert find_listing(listings, "nope") is None
 
 

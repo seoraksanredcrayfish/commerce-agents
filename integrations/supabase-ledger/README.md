@@ -21,7 +21,7 @@ deployment supplies, so one ledger can serve several stores.
 | `public.products` | listings, variants, low-stock alerts, pricing context (cost, margin) |
 | `ops.channel_order_mirror` | daily orders and sales per channel: snapshot and `query_metrics` |
 
-A family's id is `p<cafe24_product_no>`; a variant's, or an unlinked row's, is its barcode.
+A family's id is `c24:<cafe24_product_no>`, the workbench product key; a variant's, or an unlinked row's, is its barcode.
 The comma-separated option string maps onto `LEDGER_OPTION_LABELS` in order. A zero
 selling price is marked `price_status: unset`, and margin is then None.
 
