@@ -83,6 +83,23 @@ backend = LedgerMerchantBackend(
 select only the two tables. The workbench CLI reads its own database credentials from its
 checkout's environment and the tenant from `SUPABASE_TENANT_ID`, which `WorkbenchCli` sets.
 
+## Deploy the console on a host
+
+`deploy/install.sh` installs the merchant console under one directory (default
+`/opt/commerce-agent`) and changes nothing outside it: no user, service, cron, or system
+package. It needs git and Python 3.11+ and stops without them.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/commerce-agents/<ref>/integrations/supabase-ledger/deploy/install.sh \
+  | sudo bash -s -- <ref>
+```
+
+It writes `src/` (this repository at the ref), `venv/`, `.env` from
+`deploy/commerce-agent.env.example` (mode 600, kept on reinstall), and `console.sh`, which
+loads `.env` and runs the Agent SDK console with
+`--backend ledger_backend.deployment:build_merchant`. `ledger_backend.deployment` documents
+each variable. With `WORKBENCH_ROOT` empty the console is read-only.
+
 ## Tests
 
 `pytest integrations/supabase-ledger/tests` runs on the in-memory reader with ACME rows and
