@@ -2,8 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """A MerchantBackend over one tenant of the ledger. Reads come from a
-:class:`~ledger_backend.reader.LedgerReader`; no write path is wired, so every ``stage_*``
-method and ``apply_change`` raise ``ChangeNotApplicable`` and the executor relays it.
+:class:`~ledger_backend.reader.LedgerReader`. The one write is a restock, applied through
+the workbench's stock command (:class:`~ledger_backend.workbench.WorkbenchCli`) after the
+host approves it; without a workbench, and for every other write, the ``stage_*`` methods
+raise ``ChangeNotApplicable`` and the executor relays it.
+
+The backend holds no stock: a restock is staged with the stock read then, for the preview,
+and applied as the stock read at apply time plus the approved quantity. The workbench
+refuses a fix when the stock moves under it, and the change stays staged. One restock is
+one change, so a retried apply never adds twice.
 
 What the ledger cannot supply is None with a note, never a zero: traffic and conversion
 (no analytics source), campaign performance, and order amounts for a channel whose mirror
@@ -21,7 +28,11 @@ from merchant_agent import (
     BusinessSnapshot,
     Campaign,
     CampaignDraft,
+    ChangeItem,
+    ChangeKind,
+    ChangeLedger,
     ChangeNotApplicable,
+    ChangeStatus,
     InventoryActionItem,
     InventoryAlert,
     Listing,
@@ -45,6 +56,7 @@ from .periods import Window, resolve_period
 from .reader import LedgerReader
 from .rows import DailyOrders, ProductRow
 from .tenant import TenantConfig
+from .workbench import WorkbenchCli, WorkbenchError
 
 _BROWSE_QUERIES = {"", "*", "all", "everything", "전체"}
 _FILTERED_PAGE = 50
@@ -54,14 +66,18 @@ _LISTING_SORTS = {
     "price_asc": lambda listing: listing.price,
 }
 _NO_WRITES = "Writes to the store are not wired for this ledger yet; nothing was staged."
-_LIMITATIONS = (
+_NO_COMMAND = "The workbench has no command for this change; nothing was staged."
+_READ_LIMITATIONS = (
     DataLimitation(
         source="traffic", note="No analytics source: traffic and conversion are unknown."
     ),
     DataLimitation(source="campaigns", note="Campaign spend and results are not in the ledger."),
-    DataLimitation(
-        source="writes", note="Listing, price, stock, and campaign writes are not wired."
-    ),
+)
+_NO_WRITES_LIMITATION = DataLimitation(
+    source="writes", note="Listing, price, stock, and campaign writes are not wired."
+)
+_RESTOCK_ONLY_LIMITATION = DataLimitation(
+    source="writes", note="Only restocks apply, one listing per change; prices and content do not."
 )
 
 
@@ -111,10 +127,19 @@ def _missing_amount_note(rows: Sequence[DailyOrders]) -> str | None:
 
 
 class LedgerMerchantBackend(MerchantBackend):
-    def __init__(self, reader: LedgerReader, tenant: TenantConfig, config: MerchantAgentConfig):
+    def __init__(
+        self,
+        reader: LedgerReader,
+        tenant: TenantConfig,
+        config: MerchantAgentConfig,
+        *,
+        workbench: WorkbenchCli | None = None,
+    ):
         self._reader = reader
         self._tenant = tenant
         self._config = config
+        self._workbench = workbench
+        self._changes = ChangeLedger(config)
 
     async def _record(self, listing_id: str) -> tuple[ListingDetails | None, dict[str, ProductRow]]:
         """The listing or variant ``listing_id`` names, read with its family, and the
@@ -290,7 +315,7 @@ class LedgerMerchantBackend(MerchantBackend):
             variants=[context(variant) for variant in listing.variants],
         )
 
-    # -- Staged writes: none wired ---------------------------------------------------
+    # -- Staged writes: restocks through the workbench ---------------------------------
 
     async def stage_listing_update(
         self,
@@ -315,7 +340,35 @@ class LedgerMerchantBackend(MerchantBackend):
         items: list[InventoryActionItem],
         note: str | None = None,
     ) -> StagedChange:
-        raise ChangeNotApplicable(_NO_WRITES)
+        if self._workbench is None:
+            raise ChangeNotApplicable(_NO_WRITES)
+        if len(items) != 1:
+            raise ChangeNotApplicable("Stage one listing per change; stage each restock alone.")
+        item = items[0]
+        if item.action != "restock":
+            raise ChangeNotApplicable(_NO_COMMAND)
+        listing, _ = await self._record(item.listing_id)
+        if listing is None:
+            raise ChangeNotApplicable(f"no listing {item.listing_id}")
+        if listing.variants:
+            raise ChangeNotApplicable(f"{listing.listing_id} is restocked per variant.")
+        quantity = item.quantity or 0
+        if quantity <= 0:
+            raise ChangeNotApplicable("A restock adds one unit or more.")
+        return self._changes.stage(
+            kind=ChangeKind.INVENTORY_ACTION,
+            summary=note or f"Restock {listing.listing_id} by {quantity}",
+            items=[
+                ChangeItem(
+                    target=listing.listing_id,
+                    field="stock",
+                    before=listing.stock,
+                    after=listing.stock + quantity,
+                )
+            ],
+            actor=session.operator,
+            actor_kind=ActorKind.AGENT,
+        )
 
     async def stage_promotion(
         self, session: MerchantSessionContext, promotion: PromotionDraft
@@ -328,10 +381,23 @@ class LedgerMerchantBackend(MerchantBackend):
         raise ChangeNotApplicable(_NO_WRITES)
 
     async def get_pending_changes(self, session: MerchantSessionContext) -> list[StagedChange]:
-        return []
+        return self._changes.pending()
 
     async def apply_change(self, session: MerchantSessionContext, change_id: str) -> StagedChange:
-        raise ChangeNotApplicable(f"no change with id {change_id!r} to apply")
+        change = self._changes.get(change_id)
+        if self._workbench is None or change is None:
+            raise ChangeNotApplicable(f"no change with id {change_id!r} to apply")
+        if change.status is not ChangeStatus.STAGED:
+            raise ChangeNotApplicable(f"change {change_id} is {change.status.value}, not staged")
+        (item,) = change.items
+        listing, _ = await self._record(item.target)
+        if listing is None:
+            raise ChangeNotApplicable(f"no listing {item.target}")
+        try:
+            await self._workbench.set_stock(item.target, listing.stock + item.after - item.before)
+        except WorkbenchError as error:
+            raise ChangeNotApplicable(f"The workbench refused the restock: {error}") from error
+        return self._changes.apply(change_id, actor=session.operator)
 
     async def discard_change(
         self,
@@ -339,12 +405,13 @@ class LedgerMerchantBackend(MerchantBackend):
         change_id: str,
         actor_kind: ActorKind = ActorKind.OPERATOR,
     ) -> StagedChange:
-        raise ChangeNotApplicable(f"no change with id {change_id!r} to discard")
+        return self._changes.discard(change_id, actor=session.operator, actor_kind=actor_kind)
 
     # -- Merchant context ----------------------------------------------------------------
 
     async def get_merchant_context(self, session: MerchantSessionContext) -> dict[str, Any] | None:
-        return {"currency": self._tenant.currency, "limitations": list(_LIMITATIONS)}
+        writes = _NO_WRITES_LIMITATION if self._workbench is None else _RESTOCK_ONLY_LIMITATION
+        return {"currency": self._tenant.currency, "limitations": [*_READ_LIMITATIONS, writes]}
 
 
 def _metric_value(metric: str, rows: Sequence[DailyOrders]) -> float:

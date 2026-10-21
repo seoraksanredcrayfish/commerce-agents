@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "supabase-ledger"
 version = "0.1.0.dev0"
-description = "A MerchantBackend over a tenant-scoped Supabase operations ledger fed by Cafe24 and Zigzag: read-only listings, stock, pricing, and order figures."
+description = "A MerchantBackend over a tenant-scoped Supabase operations ledger fed by Cafe24 and Zigzag: listings, stock, pricing, and order figures, with restocks through the workbench CLI."
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 classifiers = ["License :: OSI Approved :: Apache Software License"]

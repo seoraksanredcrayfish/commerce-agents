@@ -1,8 +1,9 @@
 # supabase-ledger
 
 A `MerchantBackend` over one tenant of a Supabase operations ledger that a Cafe24 sync and
-a Zigzag sync feed. It reads; it does not write. Every query is bound to the tenant id the
-deployment supplies, so one ledger can serve several stores.
+a Zigzag sync feed, with the store's operations workbench as its only write path. Every
+query is bound to the tenant id the deployment supplies, so one ledger can serve several
+stores.
 
 | Module | Contents |
 |---|---|
@@ -10,6 +11,7 @@ deployment supplies, so one ledger can serve several stores.
 | `rows.py` | `ProductRow`, `DailyOrders`: the ledger records read |
 | `reader.py` | `LedgerReader`, the read port; `InMemoryLedgerReader` |
 | `postgres.py` | `PostgresLedgerReader` with its SQL; `readonly_fetch` on asyncpg |
+| `workbench.py` | `WorkbenchCli`, the write port: the workbench CLI's `stock.set` |
 | `catalog.py` | Rows to listings: a family per Cafe24 product number, a variant per barcode |
 | `periods.py` | `last_7_days`, `last_30_days`, `last_90_days`, `start/end` to date windows |
 | `merchant.py` | `LedgerMerchantBackend` |
@@ -21,15 +23,31 @@ deployment supplies, so one ledger can serve several stores.
 | `public.products` | listings, variants, low-stock alerts, pricing context (cost, margin) |
 | `ops.channel_order_mirror` | daily orders and sales per channel: snapshot and `query_metrics` |
 
-A family's id is `c24:<cafe24_product_no>`, the workbench product key; a variant's, or an unlinked row's, is its barcode.
-The comma-separated option string maps onto `LEDGER_OPTION_LABELS` in order. A zero
-selling price is marked `price_status: unset`, and margin is then None.
+Reads are bounded: a search reads up to a limit of whole families, a listing reads its own
+family, and low-stock alerts read a capped page with a separate count. A family's id is
+`c24:<cafe24_product_no>`, the workbench product key; a variant's, or an unlinked row's,
+is its barcode. The comma-separated option string maps onto `LEDGER_OPTION_LABELS` in
+order. A zero selling price is marked `price_status: unset`, and margin is then None.
 
 Reported as unknown, never as zero: traffic and conversion, campaign performance, and
 sales on a channel whose mirror has no order amounts (the snapshot's `note` names it).
-Order issues are not derived yet. Every `stage_*` call and `apply_change` raise
-`ChangeNotApplicable`; turn the merchant config's write switches off to keep those tools
-out of the prompt.
+Order issues are not derived yet.
+
+## What it writes
+
+A restock of one variant or plain listing per change, and nothing else. The backend never
+writes a table and holds no stock of its own:
+
+1. `stage_inventory_action` records the proposal with the stock read then, for the preview.
+2. The host approves it (`MerchantAgentConfig.require_host_approval`, on by default); the
+   assistant does not approve its own changes.
+3. `apply_change` reads the stock again and runs the workbench's
+   `stock.set --barcode <barcode> --count <stock + quantity> --yes`, the same function as
+   the workbench screen. A refusal, such as stock that moved under the fix, raises
+   `ChangeNotApplicable` and the change stays staged.
+
+Pauses, prices, content, promotions, and campaigns have no workbench command yet and raise
+`ChangeNotApplicable`. Without a `WorkbenchCli` the backend is read-only.
 
 ## Run
 
@@ -40,23 +58,32 @@ export LEDGER_OPTION_LABELS=color,size          # optional
 export LEDGER_LOW_STOCK_THRESHOLD=0             # optional; 0 turns low-stock alerts off
 export LEDGER_ZERO_STOCK_SELLABLE=true          # optional; zero stock stays on sale
 export LEDGER_DSN=postgresql://<read-only role>@<host>/postgres
+export WORKBENCH_ROOT=<workbench checkout>      # optional; enables restocks
+export WORKBENCH_PACKAGE=<its app's pnpm package>
 ```
 
 ```python
 from ledger_backend.merchant import LedgerMerchantBackend
 from ledger_backend.postgres import PostgresLedgerReader, readonly_fetch
 from ledger_backend.tenant import tenant_from_env
+from ledger_backend.workbench import WorkbenchCli
 
+tenant = tenant_from_env()
 backend = LedgerMerchantBackend(
     PostgresLedgerReader(readonly_fetch(os.environ["LEDGER_DSN"]), timezone="Asia/Seoul"),
-    tenant_from_env(),
+    tenant,
     MerchantAgentConfig(enable_listing_edits=False, enable_pricing=False, enable_campaigns=False),
+    workbench=WorkbenchCli(
+        os.environ["WORKBENCH_ROOT"], os.environ["WORKBENCH_PACKAGE"], tenant.tenant_id
+    ),
 )
 ```
 
 `readonly_fetch` runs each statement in a read-only transaction; give it a role that can
-select only the two tables.
+select only the two tables. The workbench CLI reads its own database credentials from its
+checkout's environment and the tenant from `SUPABASE_TENANT_ID`, which `WorkbenchCli` sets.
 
 ## Tests
 
-`pytest integrations/supabase-ledger/tests` runs on the in-memory reader with ACME rows.
+`pytest integrations/supabase-ledger/tests` runs on the in-memory reader with ACME rows and
+a fake workbench.
