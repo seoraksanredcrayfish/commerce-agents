@@ -119,16 +119,28 @@ class PostgresLedgerReader:
         return [DailyOrders(**row) for row in rows]
 
 
-def readonly_fetch(dsn: str) -> Fetch:
+def readonly_fetch(
+    dsn: str,
+    *,
+    settings: Mapping[str, str] | None = None,
+    connect: Callable[[str], Awaitable[Any]] | None = None,
+) -> Fetch:
     """A fetch on asyncpg (the ``postgres`` extra) that opens a connection per statement
-    and runs it in a read-only transaction. The driver loads on the first statement."""
+    and runs it in a read-only transaction, after setting each of ``settings`` for that
+    transaction (the ledger's row policies read ``app.tenant_id``). The driver loads on
+    the first statement; ``connect`` replaces ``asyncpg.connect``."""
 
     async def fetch(sql: str, *args: Any) -> list[Mapping[str, Any]]:
-        import asyncpg
+        if connect is None:
+            import asyncpg
 
-        connection = await asyncpg.connect(dsn)
+            connection = await asyncpg.connect(dsn)
+        else:
+            connection = await connect(dsn)
         try:
             async with connection.transaction(readonly=True):
+                for name, value in (settings or {}).items():
+                    await connection.execute("select set_config($1, $2, true)", name, value)
                 return [dict(record) for record in await connection.fetch(sql, *args)]
         finally:
             await connection.close()

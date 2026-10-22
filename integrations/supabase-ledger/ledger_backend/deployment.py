@@ -27,7 +27,8 @@ def build_merchant(
 ) -> tuple[LedgerMerchantBackend, MerchantAgentConfig]:
     tenant = tenant_from_env(env)
     reader = PostgresLedgerReader(
-        readonly_fetch(env["LEDGER_DSN"]), timezone=env.get("LEDGER_TIMEZONE", "UTC")
+        readonly_fetch(env["LEDGER_DSN"], settings={"app.tenant_id": tenant.tenant_id}),
+        timezone=env.get("LEDGER_TIMEZONE", "UTC"),
     )
     workbench = None
     if env.get("WORKBENCH_ROOT"):

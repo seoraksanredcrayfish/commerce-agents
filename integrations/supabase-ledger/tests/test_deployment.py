@@ -45,3 +45,18 @@ def test_a_missing_database_refuses_to_start():
 
     with pytest.raises(KeyError, match="LEDGER_DSN"):
         build_merchant(env)
+
+
+def test_the_ledger_connection_is_scoped_to_the_tenant(monkeypatch):
+    import ledger_backend.deployment as deployment
+
+    seen = {}
+
+    def fake_readonly_fetch(dsn, *, settings=None, connect=None):
+        seen.update(dsn=dsn, settings=settings)
+        return lambda *_: None
+
+    monkeypatch.setattr(deployment, "readonly_fetch", fake_readonly_fetch)
+    build_merchant(ENV)
+
+    assert seen == {"dsn": ENV["LEDGER_DSN"], "settings": {"app.tenant_id": "acme"}}

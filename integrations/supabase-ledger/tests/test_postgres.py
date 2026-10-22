@@ -94,3 +94,60 @@ async def test_daily_orders_bind_the_tenant_window_and_time_zone():
         ("cafe24", 3, 120000),
         ("zigzag", 2, None),
     ]
+
+
+class FakeConnection:
+    """Records what the read-only fetch runs, in order, on one connection."""
+
+    def __init__(self, rows):
+        self.calls: list[tuple] = []
+        self._rows = rows
+        self.closed = False
+
+    def transaction(self, *, readonly: bool):
+        connection = self
+
+        class Transaction:
+            async def __aenter__(self):
+                connection.calls.append(("begin", readonly))
+
+            async def __aexit__(self, *exc):
+                connection.calls.append(("end",))
+
+        return Transaction()
+
+    async def fetch(self, sql, *args):
+        self.calls.append(("fetch", sql, args))
+        return self._rows
+
+    async def execute(self, sql, *args):
+        self.calls.append(("execute", sql, args))
+
+    async def close(self):
+        self.closed = True
+
+
+async def test_readonly_fetch_sets_the_session_settings_inside_the_read_only_transaction():
+    from ledger_backend.postgres import readonly_fetch
+
+    connection = FakeConnection([{"n": 1}])
+
+    async def connect(dsn):
+        assert dsn == "postgresql://reader@db.example/postgres"
+        return connection
+
+    fetch = readonly_fetch(
+        "postgresql://reader@db.example/postgres",
+        settings={"app.tenant_id": "acme"},
+        connect=connect,
+    )
+    rows = await fetch("select 1 as n where $1 = $1", 7)
+
+    assert rows == [{"n": 1}]
+    assert connection.calls == [
+        ("begin", True),
+        ("execute", "select set_config($1, $2, true)", ("app.tenant_id", "acme")),
+        ("fetch", "select 1 as n where $1 = $1", (7,)),
+        ("end",),
+    ]
+    assert connection.closed

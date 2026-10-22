@@ -79,8 +79,9 @@ backend = LedgerMerchantBackend(
 )
 ```
 
-`readonly_fetch` runs each statement in a read-only transaction; give it a role that can
-select only the two tables. The workbench CLI reads its own database credentials from its
+`readonly_fetch` runs each statement in a read-only transaction and sets its `settings`
+there first; `build_merchant` sets `app.tenant_id` to the tenant, for row policies that
+read it. Give it a role that can select only the two tables. The workbench CLI reads its own database credentials from its
 checkout's environment and the tenant from `SUPABASE_TENANT_ID`, which `WorkbenchCli` sets.
 
 ## Deploy the console on a host
