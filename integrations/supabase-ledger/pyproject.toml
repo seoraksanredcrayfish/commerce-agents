@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "supabase-ledger"
+version = "0.1.0.dev0"
+description = "A MerchantBackend over a tenant-scoped Supabase operations ledger fed by Cafe24 and Zigzag: listings, stock, pricing, and order figures, with restocks through the workbench CLI."
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+classifiers = ["License :: OSI Approved :: Apache Software License"]
+authors = [{ name = "Anthropic" }]
+# Sibling packages are pinned to this exact dev version, as in the role packages.
+dependencies = [
+  "commerce-common==0.1.0.dev0",
+  "merchant-agent-core==0.1.0.dev0",
+  "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+# The Postgres reader's driver; the tests use the in-memory reader.
+postgres = ["asyncpg>=0.29"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["ledger_backend"]

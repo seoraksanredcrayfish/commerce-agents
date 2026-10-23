@@ -4,6 +4,10 @@
 """A console for the merchant agent on the Agent SDK, over the mock ACME merchant::
 
     python merchant-agent/runtime-agent-sdk/main.py [--once "how did last week go"]
+    python merchant-agent/runtime-agent-sdk/main.py --backend my_deployment:build
+
+``--backend`` names a function returning a deployment's (MerchantBackend,
+MerchantAgentConfig); without it the console runs over the mock store.
 
 Needs ANTHROPIC_API_KEY or an authenticated Claude Code installation. In interactive mode the console is the approval host: it asks
 y/N for each change a turn stages, and apply_change succeeds only for changes approved
@@ -23,7 +27,7 @@ import sys
 from claude_agent_sdk import ClaudeSDKClient
 
 from commerce_common.agent_sdk import TurnResult
-from merchant_agent_sdk import default_config, make_options, run_turn
+from merchant_agent_sdk import default_config, load_deployment, make_options, run_turn
 
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
 
@@ -83,8 +87,8 @@ async def confirm_staged_changes(client: ClaudeSDKClient, toolset, declined: set
             print(f"{change.change_id} stays staged (dismiss it in chat to drop it).")
 
 
-async def chat(host_approval: bool) -> None:
-    config = default_config()
+async def chat(host_approval: bool, deployment: str | None = None) -> None:
+    backend, config = load_deployment(deployment) if deployment else (None, default_config())
     if host_approval:
         config = config.model_copy(
             update={
@@ -94,9 +98,9 @@ async def chat(host_approval: bool) -> None:
         )
     else:
         config = config.model_copy(update={"require_host_approval": False})
-    options, toolset = make_options(config=config)
+    options, toolset = make_options(backend=backend, config=config)
     declined: set[str] = set()
-    print("ACME merchant agent (Agent SDK path). Type 'exit' to quit.\n")
+    print(f"{config.brand_name} merchant agent (Agent SDK path). Type 'exit' to quit.\n")
     async with ClaudeSDKClient(options=options) as client:
         while True:
             try:
@@ -115,8 +119,9 @@ async def chat(host_approval: bool) -> None:
                 await confirm_staged_changes(client, toolset, declined)
 
 
-async def once(prompt: str) -> None:
-    options, toolset = make_options()
+async def once(prompt: str, deployment: str | None = None) -> None:
+    backend, config = load_deployment(deployment) if deployment else (None, None)
+    options, toolset = make_options(backend=backend, config=config)
     async with ClaudeSDKClient(options=options) as client:
         result = await run_turn(client, prompt, toolset=toolset)
         print_turn(result)
@@ -130,9 +135,19 @@ def main() -> int:
         action="store_true",
         help="let a chat-text approval apply changes instead of the console's y/N prompt",
     )
+    parser.add_argument(
+        "--backend",
+        metavar="MODULE:FUNCTION",
+        help="a function returning the deployment's (MerchantBackend, MerchantAgentConfig)",
+    )
     args = parser.parse_args()
+    run = (
+        once(args.once, args.backend)
+        if args.once
+        else chat(not args.no_host_approval, args.backend)
+    )
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(once(args.once) if args.once else chat(not args.no_host_approval))
+        asyncio.run(run)
     return 0
 
 

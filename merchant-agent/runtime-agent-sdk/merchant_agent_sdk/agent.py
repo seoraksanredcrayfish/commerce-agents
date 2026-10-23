@@ -9,6 +9,7 @@ adds the host-side grounding and the staging follow-through reminder."""
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -81,6 +82,20 @@ def build_analysis_agent(config: MerchantAgentConfig) -> AgentDefinition:
 def default_config() -> MerchantAgentConfig:
     """The demo store's identity; a deployment supplies its own config."""
     return MerchantAgentConfig(brand_name="ACME")
+
+
+def load_deployment(spec: str) -> tuple[MerchantBackend, MerchantAgentConfig]:
+    """The backend and config a deployment's ``module:function`` returns, for a host
+    that runs the agent over something other than the mock store."""
+    module_name, _, function_name = spec.partition(":")
+    if not module_name or not function_name:
+        raise ValueError(f"expected module:function, got {spec!r}")
+    result = getattr(importlib.import_module(module_name), function_name)()
+    if not (isinstance(result, tuple) and len(result) == 2) or not isinstance(
+        result[1], MerchantAgentConfig
+    ):
+        raise TypeError(f"{spec} must return (MerchantBackend, MerchantAgentConfig)")
+    return result
 
 
 def load_skill_registry(skills_dir: Path | None = None) -> SkillRegistry:

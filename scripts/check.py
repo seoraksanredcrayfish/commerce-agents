@@ -582,6 +582,7 @@ PACKAGE_DIRS = (
     "merchant-agent/core",
     "merchant-agent/runtime-messages-api",
     "merchant-agent/runtime-agent-sdk",
+    "integrations/supabase-ledger",
 )
 SIBLING_PACKAGES = {"commerce-common", "shopping-agent-core", "merchant-agent-core"}
 
