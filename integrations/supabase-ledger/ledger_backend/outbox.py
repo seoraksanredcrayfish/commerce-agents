@@ -159,11 +159,9 @@ class Outbox:
 
 def _workbench_from_env(env: Mapping[str, str]) -> MessageWorkbench:
     from .tenant import tenant_from_env
-    from .workbench import WorkbenchCli
+    from .workbench import workbench_from_env
 
-    return WorkbenchCli(
-        env["WORKBENCH_ROOT"], env["WORKBENCH_PACKAGE"], tenant_from_env(env).tenant_id
-    )
+    return workbench_from_env(env, tenant_from_env(env).tenant_id)
 
 
 def _parser() -> argparse.ArgumentParser:

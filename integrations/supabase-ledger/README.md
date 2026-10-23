@@ -65,7 +65,7 @@ python -m ledger_backend.outbox approve <message id> --by <approver>
 python -m ledger_backend.outbox discard <message id>
 ```
 
-A send reads `WORKBENCH_ROOT`, `WORKBENCH_PACKAGE`, and the tenant variables.
+A send reads `WORKBENCH_ROOT`, `WORKBENCH_PACKAGE`, `WORKBENCH_ENV_FILE`, and the tenant variables.
 
 ## Run
 
@@ -78,29 +78,29 @@ export LEDGER_ZERO_STOCK_SELLABLE=true          # optional; zero stock stays on 
 export LEDGER_DSN=postgresql://<read-only role>@<host>/postgres
 export WORKBENCH_ROOT=<workbench checkout>      # optional; enables restocks
 export WORKBENCH_PACKAGE=<its app's pnpm package>
+export WORKBENCH_ENV_FILE=<its app's dotenv file>  # optional; the CLI's credentials
 ```
 
 ```python
 from ledger_backend.merchant import LedgerMerchantBackend
 from ledger_backend.postgres import PostgresLedgerReader, readonly_fetch
 from ledger_backend.tenant import tenant_from_env
-from ledger_backend.workbench import WorkbenchCli
+from ledger_backend.workbench import workbench_from_env
 
 tenant = tenant_from_env()
 backend = LedgerMerchantBackend(
     PostgresLedgerReader(readonly_fetch(os.environ["LEDGER_DSN"]), timezone="Asia/Seoul"),
     tenant,
     MerchantAgentConfig(enable_listing_edits=False, enable_pricing=False, enable_campaigns=False),
-    workbench=WorkbenchCli(
-        os.environ["WORKBENCH_ROOT"], os.environ["WORKBENCH_PACKAGE"], tenant.tenant_id
-    ),
+    workbench=workbench_from_env(os.environ, tenant.tenant_id),
 )
 ```
 
 `readonly_fetch` runs each statement in a read-only transaction and sets its `settings`
 there first; `build_merchant` sets `app.tenant_id` to the tenant, for row policies that
-read it. Give it a role that can select only the two tables. The workbench CLI reads its own database credentials from its
-checkout's environment and the tenant from `SUPABASE_TENANT_ID`, which `WorkbenchCli` sets.
+read it. Give it a role that can select only the two tables. The workbench CLI reads its database credentials from the process
+environment, so `WorkbenchCli` loads `WORKBENCH_ENV_FILE` into each call, and the tenant
+from `SUPABASE_TENANT_ID`, which `WorkbenchCli` sets over the file.
 
 ## Deploy the console on a host
 

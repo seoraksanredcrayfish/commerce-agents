@@ -6,7 +6,8 @@ on the Agent SDK console), built from the host's environment:
 
 ``LEDGER_DSN`` (required) and the ``LEDGER_*`` tenant variables of :mod:`ledger_backend.tenant`;
 ``LEDGER_TIMEZONE`` for day boundaries (default ``UTC``); ``MERCHANT_BRAND_NAME`` and
-``MERCHANT_MODEL``; and ``WORKBENCH_ROOT`` with ``WORKBENCH_PACKAGE`` to turn restocks on.
+``MERCHANT_MODEL``; and ``WORKBENCH_ROOT`` with ``WORKBENCH_PACKAGE`` (and ``WORKBENCH_ENV_FILE``, the workbench
+app's dotenv file) to turn restocks on.
 Listing, price, and campaign tools stay off, and changes apply only after host approval."""
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from merchant_agent import MerchantAgentConfig
 from .merchant import LedgerMerchantBackend
 from .postgres import PostgresLedgerReader, readonly_fetch
 from .tenant import tenant_from_env
-from .workbench import WorkbenchCli
+from .workbench import workbench_from_env
 
 
 def build_merchant(
@@ -32,7 +33,7 @@ def build_merchant(
     )
     workbench = None
     if env.get("WORKBENCH_ROOT"):
-        workbench = WorkbenchCli(env["WORKBENCH_ROOT"], env["WORKBENCH_PACKAGE"], tenant.tenant_id)
+        workbench = workbench_from_env(env, tenant.tenant_id)
     defaults = MerchantAgentConfig()
     config = MerchantAgentConfig(
         brand_name=env.get("MERCHANT_BRAND_NAME", defaults.brand_name),

@@ -131,3 +131,57 @@ async def test_a_blank_message_never_reaches_the_workbench():
     with pytest.raises(WorkbenchError):
         await cli.send_order_sms("o-1", "02-000-0000", "", sent_by="owner")
     assert runner.calls == []
+
+
+async def test_the_workbench_env_file_reaches_the_cli_and_the_tenant_still_wins(tmp_path):
+    env_file = tmp_path / ".env.local"
+    env_file.write_text(
+        '# workbench\nSUPABASE_URL="https://ledger.example"\n'
+        "SUPABASE_SERVICE_ROLE_KEY='k-123'\nSUPABASE_TENANT_ID=other\n\nnot a line\n"
+    )
+    runner = FakeRunner(stdout=json.dumps({"ok": True}))
+    cli = WorkbenchCli("/w", "acme-workbench", "acme", env_file=str(env_file), runner=runner)
+
+    await cli.reply_to_inquiry("thread-1", "Hello")
+
+    _, env, _ = runner.calls[0]
+    assert env["SUPABASE_URL"] == "https://ledger.example"
+    assert env["SUPABASE_SERVICE_ROLE_KEY"] == "k-123"
+    assert env["SUPABASE_TENANT_ID"] == "acme"
+
+
+async def test_a_missing_env_file_stops_before_the_cli_runs(tmp_path):
+    runner = FakeRunner(stdout=json.dumps({"ok": True}))
+    cli = WorkbenchCli(
+        "/w", "acme-workbench", "acme", env_file=str(tmp_path / "absent"), runner=runner
+    )
+
+    with pytest.raises(WorkbenchError, match="absent"):
+        await cli.reply_to_inquiry("thread-1", "Hello")
+    assert runner.calls == []
+
+
+async def test_the_deployment_variables_build_the_workbench_with_its_env_file(tmp_path):
+    from ledger_backend.workbench import workbench_from_env
+
+    env_file = tmp_path / ".env.local"
+    env_file.write_text("SUPABASE_URL=https://ledger.example\n")
+    runner = FakeRunner(stdout=json.dumps({"ok": True}))
+    cli = workbench_from_env(
+        {
+            "WORKBENCH_ROOT": "/srv/workbench",
+            "WORKBENCH_PACKAGE": "acme-workbench",
+            "WORKBENCH_ENV_FILE": str(env_file),
+        },
+        "acme",
+        runner=runner,
+    )
+
+    await cli.reply_to_inquiry("thread-1", "Hello")
+
+    argv, env, cwd = runner.calls[0]
+    assert (argv[2], cwd, env["SUPABASE_URL"]) == (
+        "acme-workbench",
+        "/srv/workbench",
+        "https://ledger.example",
+    )
