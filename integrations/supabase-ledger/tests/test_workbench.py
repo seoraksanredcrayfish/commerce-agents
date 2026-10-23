@@ -185,3 +185,30 @@ async def test_the_deployment_variables_build_the_workbench_with_its_env_file(tm
         "/srv/workbench",
         "https://ledger.example",
     )
+
+
+async def test_a_pretty_printed_result_after_node_warnings_is_read():
+    stdout = (
+        "(node:1) [MODULE_TYPELESS_PACKAGE_JSON] Warning: reparsing as ES module\n"
+        "{\n"
+        '  "note": "warning text with { braces"\n'
+        "}x\n"
+        "{\n"
+        '  "ok": true,\n'
+        '  "error": null\n'
+        "}\n"
+    )
+    runner = FakeRunner(stdout=stdout)
+
+    await WorkbenchCli("/w", "acme-workbench", "acme", runner=runner).reply_to_inquiry(
+        "thread-1", "Hello"
+    )
+
+
+async def test_a_pretty_printed_refusal_raises_with_its_reason():
+    runner = FakeRunner(code=1, stdout='{\n  "ok": false,\n  "error": "channel key missing"\n}\n')
+
+    with pytest.raises(WorkbenchError, match="channel key missing"):
+        await WorkbenchCli("/w", "acme-workbench", "acme", runner=runner).reply_to_inquiry(
+            "thread-1", "Hello"
+        )

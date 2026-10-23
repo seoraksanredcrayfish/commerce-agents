@@ -44,11 +44,13 @@ async def run_subprocess(argv: Sequence[str], env: Mapping[str, str], cwd: str) 
 
 
 def _last_json(stdout: str) -> dict | None:
-    for line in reversed(stdout.strip().splitlines()):
-        line = line.strip()
-        if line.startswith("{"):
+    """The last JSON object the CLI printed, on one line or pretty-printed across several,
+    after whatever warnings came before it."""
+    lines = stdout.strip().splitlines()
+    for start in range(len(lines) - 1, -1, -1):
+        if lines[start].lstrip().startswith("{"):
             try:
-                return json.loads(line)
+                return json.loads("\n".join(lines[start:]))
             except ValueError:
                 continue
     return None
