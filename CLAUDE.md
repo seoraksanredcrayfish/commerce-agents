@@ -17,7 +17,7 @@ paths each, four vertical examples, and a Claude Code plugin.
 - `examples/<vertical>/`: `api/`, `data/`, `storefront-web/`, `merchant-web/`; ports 8000-8003, 3000-3003, 3100-3103.
 - `plugins/commerce-builder/`: six skills, four commands; `.claude-plugin/marketplace.json` points at it.
 - `docs/`: `safety.md`, `backends.md`, `deployment.md`. `scripts/`: install, demo, smoke, screenshots, check, deploy, verify.
-- `integrations/supabase-ledger/`: `LedgerMerchantBackend` over a tenant-scoped Supabase ledger fed by Cafe24 and Zigzag; bounded reads, restocks through the workbench CLI after host approval, tenant from the environment.
+- `integrations/supabase-ledger/`: `LedgerMerchantBackend` over a tenant-scoped Supabase ledger fed by Cafe24 and Zigzag; bounded reads, restocks through the workbench CLI after host approval, an outbox of customer messages sent only on a named approval, tenant from the environment.
 - `tests/`: the suites that span packages (both roles on all three paths); each package keeps its own `tests/`.
 
 `requirements.txt` installs the eight packages and their pinned dependencies (`requirements-dev.txt`

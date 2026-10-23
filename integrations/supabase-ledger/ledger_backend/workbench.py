@@ -82,3 +82,27 @@ class WorkbenchCli:
         result = await self._run("stock.set", "--barcode", barcode, "--count", str(int(count)))
         before = int(result["before"])
         return StockFix(before=before, after=int(result.get("after", before)))
+
+    async def reply_to_inquiry(self, thread_id: str, body: str) -> None:
+        """Post ``body`` as the answer to one inquiry thread (``cs.reply``); the customer
+        sees it on the thread's channel."""
+        await self._run("cs.reply", "--thread", thread_id, "--body", _message(body))
+
+    async def send_order_sms(
+        self, order_id: str, sender_no: str, content: str, *, sent_by: str
+    ) -> None:
+        """Text the customer of one order from a registered sender number (``sms.send``);
+        ``sent_by`` is the person who approved it."""
+        payload = {
+            "orderId": order_id,
+            "senderNo": sender_no,
+            "content": _message(content),
+            "sentBy": sent_by,
+        }
+        await self._run("sms.send", "--input", json.dumps(payload, ensure_ascii=False))
+
+
+def _message(text: str) -> str:
+    if not text.strip():
+        raise WorkbenchError("a customer message needs a body")
+    return text

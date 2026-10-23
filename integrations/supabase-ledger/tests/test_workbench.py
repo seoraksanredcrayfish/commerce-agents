@@ -80,3 +80,54 @@ async def test_a_negative_or_fractional_count_never_reaches_the_workbench():
     with pytest.raises(WorkbenchError):
         await cli.set_stock("1-001", -1)
     assert runner.calls == []
+
+
+async def test_a_reply_posts_through_the_workbench_reply_command():
+    runner = FakeRunner(stdout=json.dumps({"ok": True, "error": None}))
+    cli = WorkbenchCli("/w", "acme-workbench", "acme", runner=runner)
+
+    await cli.reply_to_inquiry("thread-1", "Hello:) It ships next week. Thank you")
+
+    argv, env, _ = runner.calls[0]
+    assert argv[5:] == [
+        "cs.reply", "--thread", "thread-1", "--body", "Hello:) It ships next week. Thank you",
+        "--yes", "--json",
+    ]  # fmt: skip
+    assert env["SUPABASE_TENANT_ID"] == "acme"
+
+
+async def test_a_refused_reply_raises_with_the_channel_reason():
+    runner = FakeRunner(code=1, stdout=json.dumps({"ok": False, "error": "channel key missing"}))
+
+    with pytest.raises(WorkbenchError, match="channel key missing"):
+        await WorkbenchCli("/w", "acme-workbench", "acme", runner=runner).reply_to_inquiry(
+            "thread-1", "Hello"
+        )
+
+
+async def test_an_order_text_sends_through_the_workbench_sms_command_with_its_approver():
+    runner = FakeRunner(stdout=json.dumps({"ok": True}))
+    cli = WorkbenchCli("/w", "acme-workbench", "acme", runner=runner)
+
+    await cli.send_order_sms("20260101-0000001", "02-000-0000", "Hello", sent_by="owner")
+
+    argv, _, _ = runner.calls[0]
+    assert argv[5:7] == ["sms.send", "--input"]
+    assert json.loads(argv[7]) == {
+        "orderId": "20260101-0000001",
+        "senderNo": "02-000-0000",
+        "content": "Hello",
+        "sentBy": "owner",
+    }
+    assert argv[8:] == ["--yes", "--json"]
+
+
+async def test_a_blank_message_never_reaches_the_workbench():
+    runner = FakeRunner(stdout=json.dumps({"ok": True}))
+    cli = WorkbenchCli("/w", "acme-workbench", "acme", runner=runner)
+
+    with pytest.raises(WorkbenchError):
+        await cli.reply_to_inquiry("thread-1", "  ")
+    with pytest.raises(WorkbenchError):
+        await cli.send_order_sms("o-1", "02-000-0000", "", sent_by="owner")
+    assert runner.calls == []

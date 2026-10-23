@@ -11,7 +11,8 @@ stores.
 | `rows.py` | `ProductRow`, `DailyOrders`: the ledger records read |
 | `reader.py` | `LedgerReader`, the read port; `InMemoryLedgerReader` |
 | `postgres.py` | `PostgresLedgerReader` with its SQL; `readonly_fetch` on asyncpg |
-| `workbench.py` | `WorkbenchCli`, the write port: the workbench CLI's `stock.set` |
+| `workbench.py` | `WorkbenchCli`, the write port: the workbench CLI's `stock.set`, `cs.reply`, `sms.send` |
+| `outbox.py` | `Outbox`: customer messages staged by the assistant, sent on a named approval |
 | `catalog.py` | Rows to listings: a family per Cafe24 product number, a variant per barcode |
 | `periods.py` | `last_7_days`, `last_30_days`, `last_90_days`, `start/end` to date windows |
 | `merchant.py` | `LedgerMerchantBackend` |
@@ -48,6 +49,23 @@ writes a table and holds no stock of its own:
 
 Pauses, prices, content, promotions, and campaigns have no workbench command yet and raise
 `ChangeNotApplicable`. Without a `WorkbenchCli` the backend is read-only.
+
+## Customer messages
+
+`Outbox` holds an inquiry reply (to a channel thread, `cs.reply`) or a text to an order's
+customer (`sms.send`) until a person approves it by name; staging sends nothing. A refused
+send stays staged with the reason, and a sent or discarded message cannot be approved
+again. The outbox is one JSON file (mode 600) named by `LEDGER_OUTBOX`:
+
+```bash
+python -m ledger_backend.outbox stage-reply <thread id> "<body>"
+python -m ledger_backend.outbox stage-sms <order id> <sender number> "<body>"
+python -m ledger_backend.outbox list
+python -m ledger_backend.outbox approve <message id> --by <approver>
+python -m ledger_backend.outbox discard <message id>
+```
+
+A send reads `WORKBENCH_ROOT`, `WORKBENCH_PACKAGE`, and the tenant variables.
 
 ## Run
 
